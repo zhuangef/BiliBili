@@ -79,70 +79,126 @@ const generateSign = body => md5(
 	+ 'c2ed53a74eeefe3cf99fbd01d8c9c375'
 )
 
-const persistentStore = config => {
-	const PStoreConfig = $.getItem($.name + "_daily_bonus", {})
-	const isCookieValid = PStoreConfig.cookie?.bili_jct === config.cookie.bili_jct
-	const isSameUser = PStoreConfig.cookie?.DedeUserID === config.cookie.DedeUserID
-	if (PStoreConfig.cookie && !isCookieValid) {
-		!isSameUser && (config = PStoreConfig?.Settings ? {...config, Settings: PStoreConfig.Settings} : config)
-		config.FirstInsert = false
-	} else if (PStoreConfig.cookie) {
-		return $.log("- cookie未失效,无需更新")
-	} else {
-		config.FirstInsert = true
+const initTaskConfig = accountConfig => {
+	[['cookie'], ['user'], ['watch'], ['share'], ['coins']].forEach(key => !accountConfig[key] && (accountConfig[key] = {})) //init config
+	return accountConfig
+}
+
+const normalizeStore = store => {
+	store = (store && typeof store === "object") ? store : {}
+	if (Array.isArray(store.accounts)) {
+		store.accounts = store.accounts.map(account => initTaskConfig(account))
+		return store
 	}
-	const isFirstInsert = config.FirstInsert
-	delete config.FirstInsert
-	const successMessage = $.setItem($.name + "_daily_bonus", $.toStr(config))
-		? "🎉cookie存储成功"
-		: "🤒cookie存储失败"
-	$.msg($.name, isFirstInsert ? "首次获取cookie" : "检测到cookie已更新", successMessage)
-	$.log($.name + ": " +`${isFirstInsert ? "首次获取cookie" : "检测到cookie已更新"}`)
+	if (store.cookie || store.cookieStr || store.key) {
+		return {
+			Settings: store.Settings,
+			accounts: [initTaskConfig(store)].filter(account => account.cookie?.DedeUserID)
+		}
+	}
+	store.accounts = []
+	return store
+}
+
+const syncAccountSettings = accountConfig => {
+	accountConfig.Settings = store.Settings || accountConfig.Settings || {}
+	return accountConfig
+}
+
+const saveStore = () => $.setItem(STORE_KEY, $.toStr(store))
+
+const saveConfig = () => {
+	if (Array.isArray(store.accounts)) {
+		const mid = config.cookie?.DedeUserID
+		const index = store.accounts.findIndex(account => account.cookie?.DedeUserID === mid)
+		index >= 0 ? store.accounts[index] = config : store.accounts.push(config)
+		return saveStore()
+	}
+	return $.setItem(STORE_KEY, $.toStr(config))
+}
+
+const persistentStore = accountConfig => {
+	const mid = accountConfig.cookie?.DedeUserID
+	if (!mid) return $.msg($.name, "- 获取cookie信息异常")
+	store = normalizeStore($.getItem(STORE_KEY, {}))
+	const index = store.accounts.findIndex(account => account.cookie?.DedeUserID === mid)
+	const oldAccount = store.accounts[index]
+	const isCookieValid = oldAccount?.cookie?.bili_jct === accountConfig.cookie.bili_jct
+	if (oldAccount && isCookieValid) return $.log(`- 账号${mid} cookie未失效,无需更新`)
+	const isFirstInsert = index < 0
+	accountConfig = syncAccountSettings({ ...(oldAccount || {}), ...accountConfig })
+	index >= 0 ? store.accounts[index] = initTaskConfig(accountConfig) : store.accounts.push(initTaskConfig(accountConfig))
+	const successMessage = saveStore() ? "🎉cookie存储成功" : "🤒cookie存储失败"
+	$.msg($.name, isFirstInsert ? `首次获取账号${mid} cookie` : `检测到账号${mid} cookie已更新`, successMessage)
+	$.log($.name + ": " +`${isFirstInsert ? `首次获取账号${mid} cookie` : `检测到账号${mid} cookie已更新`}`)
 	$.log(successMessage)
 }
 
 const $ = new Env("bilibili")
+const STORE_KEY = $.name + "_daily_bonus"
 const startTime = format()
 let cards = []
-let config = $.getItem($.name + "_daily_bonus", {});
-[['cookie'], ['user'], ['watch'], ['share'], ['coins']].forEach(key => !config[key] && (config[key] = {})) //init config
+let store = normalizeStore($.getItem(STORE_KEY, {}))
+let config = syncAccountSettings(initTaskConfig(store.accounts[0] || {}))
 
-const baseHeaders = {
+let baseHeaders = {
 	'user-agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_4_1 like Mac OS X) AppleWebKit/621.1.15.10.7 (KHTML, like Gecko) Mobile/22E252 BiliApp/84400100 os/ios model/iPhone 16 Pro Max mobi_app/iphone build/84400100 osVer/18.3 network/2 channel/AppStore c_locale/zh-Hans_CN s_locale/zh-Hans_CN disable_rcmd/0',
 	'cookie': config.cookieStr
 }
 
 !(async () => {
 	if ("object" === typeof $response) {
-		if(!config.matchTime || (Date.now() - config.matchTime) > 10000) {
-			config.matchTime = Date.now()
-			$.setItem($.name + "_daily_bonus", $.toStr(config))
+		if(!store.matchTime || (Date.now() - store.matchTime) > 10000) {
+			store.matchTime = Date.now()
+			saveStore()
 		} else {
-			if ((Date.now() - config.matchTime) < 10000) return $.log("- Blocked: interval <10s")
+			if ((Date.now() - store.matchTime) < 10000) return $.log("- Blocked: interval <10s")
 		}
 		$.log("- 正在获取cookie, 请稍后")
 		await getCookie()
 	} else if ("object" === typeof $request) {
 		let Cookie = $request.headers.cookie || $request.headers.Cookie
 		if (Cookie) {
-			config.cookie = string2object(Cookie)
-			if (config.cookie.DedeUserID) {
+			const accountConfig = initTaskConfig({ cookie: string2object(Cookie) })
+			if (accountConfig.cookie.DedeUserID) {
 				const url = $request.url
-				config.key = url.match(/.*access_key=(.*?)&/)?.[1]
-				config.cookieStr = `DedeUserID=${config.cookie.DedeUserID}; DedeUserID__ckMd5=${config.cookie.DedeUserID__ckMd5}; SESSDATA=${config.cookie.SESSDATA}; bili_jct=${config.cookie.bili_jct}; sid=${config.cookie.sid}`
+				accountConfig.key = url.match(/.*access_key=(.*?)&/)?.[1]
+				accountConfig.cookieStr = `DedeUserID=${accountConfig.cookie.DedeUserID}; DedeUserID__ckMd5=${accountConfig.cookie.DedeUserID__ckMd5}; SESSDATA=${accountConfig.cookie.SESSDATA}; bili_jct=${accountConfig.cookie.bili_jct}; sid=${accountConfig.cookie.sid}`
 			} else {
 				return $.msg($.name, "- 获取cookie信息异常")
 			}
-			persistentStore(config)
+			persistentStore(accountConfig)
 		} else {
 			$.msg($.name, "- 未发现有效cookie信息")
 		}
 	} else {
-		await signBiliBili()
+		await signAllAccounts()
 	}
 })()
 	.catch((e) => $.logErr(e))
 	.finally(() => $.done())
+
+function selectAccount(accountConfig, index) {
+	config = syncAccountSettings(initTaskConfig(accountConfig))
+	baseHeaders.cookie = config.cookieStr
+	cards = []
+	$.log(`---- 开始执行第${index + 1}/${store.accounts.length}个账号 ${config.cookie?.DedeUserID || "未知"}`)
+}
+
+async function signAllAccounts() {
+	store = normalizeStore($.getItem(STORE_KEY, {}))
+	if (!store.accounts.length) return $.msg(`${$.name} 任务失败`, `📅 ${startTime}`, "🤒请先获取cookie")
+	for (let i = 0; i < store.accounts.length; i++) {
+		selectAccount(store.accounts[i], i)
+		await signBiliBili()
+	}
+}
+
+function removeCurrentAccount() {
+	const mid = config.cookie?.DedeUserID
+	store.accounts = store.accounts.filter(account => account.cookie?.DedeUserID !== mid)
+	return saveStore()
+}
 
 async function getCookie() {
 	const qrCode = await getQrcode()
@@ -321,8 +377,8 @@ async function loginConfirm(auth_code) {
 			if (body.code === 0 && body.message === "OK") {
 				$.log("- 确认登录成功")
 				const cookieStr = body.data.cookie_info.cookies.map(c => `${c.name}=${c.value}`).join('; ');
-				[config.cookieStr, config.cookie, config.key] = [cookieStr, string2object(cookieStr), body.data.access_token];
-				persistentStore(config)
+				const accountConfig = initTaskConfig({ cookieStr, cookie: string2object(cookieStr), key: body.data.access_token })
+				persistentStore(accountConfig)
 			}
 			switch (body.code) {
 				case 0:
@@ -383,7 +439,7 @@ async function watch(aid, bvid, cid) {
 				$.log(`- 累计观看(登录)次数 ${(config.watch.num || 0) + 1}`)
 				config.user.num = (config.user.num || 0) + 1
 				config.watch.num = (config.watch.num || 0) + 1
-				$.setItem($.name + "_daily_bonus", $.toStr(config))
+				saveConfig()
 			} else {
 				$.log("- 观看失败, 原因: " + body?.message)
 			}
@@ -432,7 +488,7 @@ async function share(aid, cid, short_link) {
 			if (body?.code === 0) {
 				config.share.num = (config.share.num || 0) + 1
 				$.log("- 分享成功")
-				$.setItem($.name + "_daily_bonus", $.toStr(config))
+				saveConfig()
 			} else {
 				$.log("- 分享失败, 原因: " + body?.message)
 			}
@@ -476,11 +532,11 @@ async function coin() {
 						config.user.money -= 1
 						config.coins.num += 10
 						config.coins.time = startTime
-						$.setItem($.name + "_daily_bonus", $.toStr(config))
+						saveConfig()
 					} else {
 						$.log("- 投币失败,原因 " + body.message)
 						config.coins.failures = (config.coins.failures === 0 || typeof config.coins.failures === 'undefined' ? 1 : config.coins.failures + 1)
-						$.setItem($.name + "_daily_bonus", $.toStr(config))
+						saveConfig()
 						if (config.coins.failures < 11) {
 							$.log("- 正在重试...重试次数 " + (config.coins.failures - 1) + "(超过十次不再重试)")
 							await $.wait(300) //减少频繁请求报错概率
@@ -893,7 +949,7 @@ async function bigScoreOgvWatchNew() {
 				if (config.task_id && config.token) {
 					await bigScoreOgvWatchComplete(config.task_id, config.token)
 					delete config.task_id, delete config.token
-					$.setItem($.name + "_daily_bonus", $.toStr(config))
+					saveConfig()
 					return true
 				}
 				delete config.task_id, delete config.token
@@ -905,7 +961,7 @@ async function bigScoreOgvWatchNew() {
 				} else {
 					$.log("- 获取剧集明细失败")
 				}
-				$.setItem($.name + "_daily_bonus", $.toStr(config))
+				saveConfig()
 			} else {
 				$.log("- 大会员观看剧集任务接取失败")
 				$.log("- 原因 " + body?.message)
@@ -1073,13 +1129,13 @@ async function me() {
 			const body = $.toObj(response.body)
 			if (body?.code) {
 				$.log("- ❌❌获取用户信息失败(请更新cookie)")
-				$.setItem($.name + "_daily_bonus", (config = config?.Settings && Object.keys(config.Settings).length ? { Settings: config.Settings } : null) && $.toStr(config))//清空cookie但保留boxjs设置
+				removeCurrentAccount()//清空当前失效账号但保留boxjs设置
 				return false
 			} else {
 				$.log("- 🎉cookie有效任务即将开始🎉")
 				config.user = body?.data
 				config.user.num = check("user") ? 1 : (config.user.num || 0) + 1
-				$.setItem($.name + "_daily_bonus", $.toStr(config))
+				saveConfig()
 
 				config.user.mext_exp = config.user.level_info.next_exp - config.user.level_info.current_exp
 				config.user.next_day = Math.ceil(config.user.mext_exp / 15)
@@ -1171,7 +1227,7 @@ async function queryStatus() {
 					$.log("! 今日投币未完成")
 				}
 				config.coins.num = body.data.coins
-				$.setItem($.name + "_daily_bonus", $.toStr(config))
+				saveConfig()
 			} else {
 				$.log("- 查询失败")
 				$.log("- 原因 " + body?.message)
