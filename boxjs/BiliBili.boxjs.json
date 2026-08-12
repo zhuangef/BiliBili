@@ -47,6 +47,13 @@
 					"val": "5",
 					"type": "text",
 					"desc": "充电B币数量(对应每月B币券, 默认5B币, 防勿充可更改为0)"
+				},
+				{
+					"id": "@bilibili_daily_bonus.Settings.accounts",
+					"name": "账号独立设置",
+					"val": "{}",
+					"type": "textarea",
+					"desc": "按账号DedeUserID配置投币/充电，如 {\"123456\":{\"exec\":0,\"charge_mid\":\"654321\",\"bp_num\":5}}；未配置账号使用上方通用设置"
 				}
 			]
 		},

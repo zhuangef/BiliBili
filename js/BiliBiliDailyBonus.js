@@ -68,6 +68,34 @@ const string2object = cookie => {
 	return obj
 }
 
+
+const parseAccountSettings = settings => {
+	if (!settings || typeof settings !== "object") return {}
+	let accounts = settings.accounts || settings.accountSettings || {}
+	if (typeof accounts === "string") accounts = $.toObj(accounts, {})
+	if (Array.isArray(accounts)) {
+		return accounts.reduce((result, item) => {
+			const mid = item?.mid || item?.DedeUserID || item?.uid
+			if (mid) result[mid] = item
+			return result
+		}, {})
+	}
+	return accounts && typeof accounts === "object" ? accounts : {}
+}
+
+const getAccountSettings = () => {
+	const globalSettings = store.Settings || {}
+	const accountSettings = parseAccountSettings(globalSettings)[config.cookie?.DedeUserID] || {}
+	const legacyAccountSettings = store.Settings ? {} : (config.Settings || {})
+	return { ...legacyAccountSettings, ...globalSettings, ...accountSettings }
+}
+
+const getAccountSetting = (key, defaultValue) => {
+	const settings = getAccountSettings()
+	const value = settings[key]
+	return value === undefined || value === null || value === "" ? defaultValue : value
+}
+
 const isNotComplete = exec_times => 
 	config.user.num === 0 ||
 	config.watch.num === 0 ||
@@ -101,7 +129,7 @@ const normalizeStore = store => {
 }
 
 const syncAccountSettings = accountConfig => {
-	accountConfig.Settings = store.Settings || accountConfig.Settings || {}
+	accountConfig.Settings = accountConfig.Settings || {}
 	return accountConfig
 }
 
@@ -210,7 +238,7 @@ async function getCookie() {
 async function signBiliBili() {
 	if (config.cookie && await me()) {
 		await queryStatus()
-		const exec_times = Number(config.Settings?.exec ?? 5)
+		const exec_times = Number(getAccountSetting("exec", 5))
 		const real_times = Math.max(0, exec_times - (Number(config.coins.num) / 10))
 		let flag = isNotComplete(exec_times)
 		if (flag){
@@ -287,7 +315,7 @@ async function signBiliBili() {
 				if (config.user.vipType === 2) {
 					for (const {code, title} of privileges) await vipPrivilege(code) && (code === 1 ? $.msg(title, "🎉🎉🎉领取成功", `- 领取${title}成功`) : $.log(`- 领取${title}成功`))
 					await $.wait(800) //延迟执行,避免领劵失败
-					await Charge(config.Settings?.charge_mid || config.user.mid, config.Settings?.bp_num || 5)//充电
+					await Charge(getAccountSetting("charge_mid", config.user.mid), getAccountSetting("bp_num", 5))//充电
 				} else {
 					for (const code of [6, 7]) await vipPrivilege(code) && $.log(`- 领取${privileges.find(p => p.code === code).title}成功`)
 				}
@@ -1218,7 +1246,7 @@ async function queryStatus() {
 				if (body.data.coins === 50){
 					$.log("- 今日已投币")
 					if (!config['coins'].hasOwnProperty("time")) config.coins.time = startTime
-				} else if ((body.data.coins / 10) >= Number(config.Settings?.exec ?? 5)) {
+				} else if ((body.data.coins / 10) >= Number(getAccountSetting("exec", 5))) {
 					if (!config['coins'].hasOwnProperty("time")) config.coins.time = startTime
 					$.log("- 今日已投币（达到用户设定数量）")
 				} else if (config.user.money <= 5) {
