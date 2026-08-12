@@ -24,28 +24,28 @@ QX, Surge, Loon说明：
 脚本将在每天上午7点30执行.
 2.投币设置
 定时任务脚本投币规则为: 随机获取关注列表Up主视频, 默认5视频5硬币, 不点赞.
-用户如需要不投币的版本, 请使用boxjs订阅「https://raw.githubusercontent.com/ClydeTime/BiliBili/main/boxjs/BiliBili.boxjs.json」
+用户如需要不投币的版本, 请使用boxjs订阅「https://raw.githubusercontent.com/zhuangef/BiliBili/main/boxjs/BiliBili.boxjs.json」
 将投币次数置为0, 并保存即可.
 /***********************
 Surge 脚本配置:
 ************************
 
 # B站每日等级任务 「请在模块中添加」
-https://raw.githubusercontent.com/ClydeTime/BiliBili/main/modules/BiliBiliDailyBonus.sgmodule
+https://raw.githubusercontent.com/zhuangef/BiliBili/main/modules/BiliBiliDailyBonus.sgmodule
 
 ************************
 QuantumultX 远程脚本配置:
 ************************
 
 # B站每日等级任务 「请在重写中添加」
-https://raw.githubusercontent.com/ClydeTime/BiliBili/main/modules/BiliBiliDailyBonus.snippet
+https://raw.githubusercontent.com/zhuangef/BiliBili/main/modules/BiliBiliDailyBonus.snippet
 
 ************************
 Loon 远程脚本配置:
 ************************
 
 # B站每日等级任务 「请在插件中添加」
-https://raw.githubusercontent.com/ClydeTime/BiliBili/main/modules/BiliBiliDailyBonus.plugin
+https://raw.githubusercontent.com/zhuangef/BiliBili/main/modules/BiliBiliDailyBonus.plugin
 */
 
 const format = (ts, fmt = 'yyyy-MM-dd HH:mm:ss') => {
