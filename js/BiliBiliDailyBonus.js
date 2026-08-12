@@ -166,6 +166,7 @@ const $ = new Env("bilibili")
 const STORE_KEY = $.name + "_daily_bonus"
 const startTime = format()
 let cards = []
+let accountNotices = []
 let store = normalizeStore($.getItem(STORE_KEY, {}))
 let config = syncAccountSettings(initTaskConfig(store.accounts[0] || {}))
 
@@ -215,11 +216,27 @@ function selectAccount(accountConfig, index) {
 
 async function signAllAccounts() {
 	store = normalizeStore($.getItem(STORE_KEY, {}))
+	accountNotices = []
 	if (!store.accounts.length) return $.msg(`${$.name} 任务失败`, `📅 ${startTime}`, "🤒请先获取cookie")
 	for (let i = 0; i < store.accounts.length; i++) {
 		selectAccount(store.accounts[i], i)
 		await signBiliBili()
 	}
+	pushSummaryNotice()
+}
+
+function pushSummaryNotice() {
+	if (!accountNotices.length) return
+	const completeCount = accountNotices.filter(notice => notice.completed).length
+	const failedCount = accountNotices.filter(notice => notice.failed).length
+	const title = `${$.name} 多账号任务进度`
+	const subTitle = `共${accountNotices.length}个账号，完成${completeCount}个${failedCount ? `，失败${failedCount}个` : ""}`
+	const content = accountNotices.map(notice => notice.summary).join("\n\n")
+	$.msg(title, subTitle, content)
+}
+
+function appendAccountNotice(notice) {
+	accountNotices.push(notice)
 }
 
 function removeCurrentAccount() {
@@ -313,7 +330,7 @@ async function signBiliBili() {
 				{ code: 6, title: "大会员每月装扮体验卡成功" },
 				{ code: 7, title: "大会员每月课堂优惠券成功" }]
 				if (config.user.vipType === 2) {
-					for (const {code, title} of privileges) await vipPrivilege(code) && (code === 1 ? $.msg(title, "🎉🎉🎉领取成功", `- 领取${title}成功`) : $.log(`- 领取${title}成功`))
+					for (const {code, title} of privileges) await vipPrivilege(code) && $.log(`- 领取${title}成功`)
 					await $.wait(800) //延迟执行,避免领劵失败
 					await Charge(getAccountSetting("charge_mid", config.user.mid), getAccountSetting("bp_num", 5))//充电
 				} else {
@@ -329,7 +346,7 @@ async function signBiliBili() {
 		$.log(`- 分享时间: ${config.share.time || "暂无"}`)
 		$.log(`- 投币时间: ${config.coins.time || "暂无"}`)
 
-		notice = {
+		const notice = {
 			title: `${$.name} [${config.user.uname}]`,
 			subTitle: `${flag ? "✅任务完成" : "❗️有未完成的任务"}`,
 			content:
@@ -337,9 +354,17 @@ async function signBiliBili() {
 				`经验:当前${config.user.level_info.current_exp}/下级${config.user.level_info.next_exp}/满级28800\n` +
 				`等级:当前${config.user.level_info.current_level}级 升满级最快需${Math.max(0, Math.ceil(config.user.v6_exp / 65))}天` + vipMessage
 		}
-		$.msg(notice.title, notice.subTitle, notice.content)
+		appendAccountNotice({
+			completed: flag,
+			failed: false,
+			summary: `${notice.title} ${notice.subTitle}\n${notice.content}`
+		})
 	} else {
-		$.msg(`${$.name} 任务失败`,`📅 ${startTime}`, "🤒请更新cookie")
+		appendAccountNotice({
+			completed: false,
+			failed: true,
+			summary: `${$.name} [${config.cookie?.DedeUserID || "未知账号"}] ❗️任务失败\n🤒请更新cookie`
+		})
 	}
 }
 
@@ -1089,9 +1114,6 @@ async function vipPrivilege(type) {
 			} else {
 				$.log("- 领取大会员每月福利失败")
 				$.log("- 原因 " + body?.message)
-				if (type === 1) {
-					$.msg("年度大会员月度福利", "B币券领取失败", "原因: " + body?.message)
-				}
 				return false
 				//其他福利没什么用,失败也无需单独通知
 			}
@@ -1201,7 +1223,7 @@ async function me() {
 			$.logErr(e, response)
 		}
 	}, reason => {
-		$.msg($.name, "- 获取用户信息失败", $.toStr(reason))
+		$.log($.name, "- 获取用户信息失败", $.toStr(reason))
 		return false
 })
 
